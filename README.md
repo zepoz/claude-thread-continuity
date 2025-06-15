@@ -6,10 +6,28 @@
 
 - **🔄 Automatic State Persistence** - Auto-saves project context during conversations
 - **⚡ Seamless Restoration** - Instantly restore full context when starting new threads
+- **🛡️ Smart Validation** - Prevents project fragmentation with intelligent name checking
 - **🔒 Privacy First** - All data stored locally on your machine
 - **🎯 Zero Configuration** - Works invisibly once set up
 - **📊 Smart Triggers** - Auto-saves on file changes, decisions, milestones
 - **🗂️ Multi-Project Support** - Manage multiple concurrent projects
+
+## ✨ NEW: Anti-Fragmentation System
+
+Version 1.1 introduces intelligent project validation to prevent the common issue of accidentally creating multiple similar projects:
+
+- **🔍 Fuzzy Name Matching** - Detects similar project names (70% similarity threshold)
+- **⚠️ Validation Warnings** - Suggests consolidation when similar projects exist
+- **💪 Force Override** - Bypass validation when genuinely different projects needed
+- **🎯 Configurable Thresholds** - Adjust sensitivity for your workflow
+
+### Example Validation in Action
+
+```
+❌ Project "Hebrew Speaking Evaluation MVP" blocked
+✅ Similar project found: "Hebrew Evaluation MVP" (85% similar)
+🎯 Recommendation: Update existing project or use force=true
+```
 
 ## ⚡ Quick Start
 
@@ -21,7 +39,10 @@ cd claude-thread-continuity
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Add to Claude Desktop config
+# 3. Test the enhanced server
+python3 test_server.py
+
+# 4. Add to Claude Desktop config
 # See setup instructions below
 ```
 
@@ -43,7 +64,7 @@ cd ~/.mcp-servers/claude-continuity
 Edit your Claude Desktop configuration file:
 
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Windows:** `%APPDATA%\\Claude\\claude_desktop_config.json`
 - **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
 Add this configuration:
@@ -74,6 +95,14 @@ The server automatically saves project state when:
 - ✅ Project milestones are reached
 - ✅ Every 10 messages (fallback)
 
+### Smart Validation Process
+
+Before saving, the system:
+1. **Checks for Similar Names** - Uses fuzzy matching to find existing projects
+2. **Calculates Similarity** - Compares project names with 70% threshold
+3. **Provides Recommendations** - Suggests consolidation or renaming
+4. **Allows Override** - Use `force: true` for edge cases
+
 ### Context Restoration
 
 When starting a new thread:
@@ -83,19 +112,30 @@ When starting a new thread:
 
 ## 🔧 Available Commands
 
-| Command | Description |
-|---------|-------------|
-| `save_project_state` | Manually save current project state |
-| `load_project_state` | Restore full project context |
-| `list_active_projects` | View all tracked projects |
-| `get_project_summary` | Get quick project overview |
-| `auto_save_checkpoint` | Triggered automatically during conversations |
+| Command | Description | NEW in v1.1 |
+|---------|-------------|-------------|
+| `save_project_state` | Save current project state | ✨ Now with validation |
+| `load_project_state` | Restore full project context | |
+| `list_active_projects` | View all tracked projects | |
+| `get_project_summary` | Get quick project overview | |
+| `validate_project_name` | Check for similar project names | ✨ NEW |
+| `auto_save_checkpoint` | Triggered automatically | |
 
 ## 💡 Usage Examples
 
-### Starting a New Project
+### Starting a New Project (with Validation)
 ```
 save_project_state: project_name="my-web-app", current_focus="Setting up React components", technical_decisions=["Using TypeScript", "Vite for bundling"], next_actions=["Create header component", "Set up routing"]
+```
+
+### Checking Name Before Creating
+```
+validate_project_name: project_name="my-webapp", similarity_threshold=0.7
+```
+
+### Force Override When Needed
+```
+save_project_state: project_name="my-web-app-v2", force=true, current_focus="Starting version 2"
 ```
 
 ### Continuing After Token Limit
@@ -124,6 +164,7 @@ Project states are stored locally at:
 - **Privacy:** Everything stays on your machine
 - **Backups:** Automatic backup rotation (keeps last 5)
 - **Format:** Human-readable JSON files
+- **Validation:** Metadata tracks validation bypass status
 
 ## 🏗️ Project State Structure
 
@@ -137,9 +178,26 @@ Each saved state includes:
   "files_modified": ["List of files created/changed"],
   "next_actions": ["Planned next steps"],
   "conversation_summary": "Brief context summary",
-  "last_updated": "2025-06-07T10:30:00Z"
+  "last_updated": "2025-06-15T10:30:00Z",
+  "version": "1.1",
+  "validation_bypassed": false
 }
 ```
+
+## 🛡️ Validation Configuration
+
+### Default Settings
+- **Similarity Threshold:** 70% (0.7)
+- **Comparison Method:** Fuzzy string matching
+- **Auto-save Behavior:** Bypasses validation (uses `force=true`)
+
+### Customizing Validation
+```
+validate_project_name: project_name="test-project", similarity_threshold=0.8
+```
+
+Higher threshold = stricter matching (0.9 = 90% similar required)
+Lower threshold = looser matching (0.5 = 50% similar triggers warning)
 
 ## 🔍 Troubleshooting
 
@@ -149,14 +207,22 @@ Each saved state includes:
 3. Validate JSON config syntax
 4. Restart Claude Desktop completely
 
-### Testing the Server
+### Testing the Enhanced Server
 ```bash
 cd ~/.mcp-servers/claude-continuity
-python3 server.py
-# Should show initialization messages
+python3 test_server.py
 ```
 
+The test suite now includes validation testing and will report:
+- ✅ Basic functionality tests
+- ✅ Project validation tests  
+- ✅ Fuzzy matching accuracy
+- ✅ Force override functionality
+
 ### Common Issues
+
+**Validation Too Strict:**
+Lower the similarity threshold or use `force=true`
 
 **Permission Errors:**
 ```bash
@@ -177,17 +243,26 @@ Update the config to use full Python path:
 ### Requirements
 - Python 3.8+
 - MCP SDK 1.0+
+- difflib (built-in, for fuzzy matching)
 
 ### Running Tests
 ```bash
 python3 test_server.py
 ```
 
+Enhanced test suite includes:
+- Basic functionality validation
+- **NEW:** Project name similarity testing
+- **NEW:** Validation workflow testing
+- **NEW:** Force override testing
+- **NEW:** MCP tool validation
+
 ### Project Structure
 ```
 claude-thread-continuity/
-├── server.py           # Main MCP server
+├── server.py           # Main MCP server (enhanced with validation)
 ├── requirements.txt    # Python dependencies
+├── test_server.py     # Comprehensive test suite
 ├── README.md          # This file
 ├── LICENSE            # MIT License
 └── examples/          # Usage examples
@@ -202,24 +277,44 @@ Contributions welcome! Please:
 3. Add tests for new functionality
 4. Submit a pull request
 
+### Current Development Priorities
+- [ ] Integration with external project management tools
+- [ ] Advanced similarity algorithms
+- [ ] Project merging utilities
+- [ ] Custom validation rules
+
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🚀 Why This Matters
 
-**Before:** 😫 Hit token limit → Lose all context → Re-explain everything → Lose momentum
+**Before v1.1:** 😫 Hit token limit → Lose all context → Re-explain everything → Lose momentum
 
-**After:** 😎 Hit token limit → Start new thread → `load_project_state` → Continue seamlessly
+**Common Problem:** 😤 Create "Hebrew MVP", then "Hebrew Evaluation MVP", then "Hebrew Speaking MVP" → Context scattered across multiple projects
+
+**After v1.1:** 😎 Hit token limit → Start new thread → `load_project_state` → Continue seamlessly + Smart validation prevents fragmentation
 
 Perfect for:
-- 🏗️ **Complex Development Projects** - Keep track of architecture decisions
-- 📚 **Learning & Research** - Maintain context across study sessions  
-- ✍️ **Writing Projects** - Remember plot points and character development
-- 🔧 **Multi-session Debugging** - Preserve debugging state and findings
+- 🏗️ **Complex Development Projects** - Keep track of architecture decisions without fragmentation
+- 📚 **Learning & Research** - Maintain context across study sessions with consistent naming
+- ✍️ **Writing Projects** - Remember plot points without creating duplicate character projects
+- 🔧 **Multi-session Debugging** - Preserve debugging state with clear project organization
+
+## 📈 Version History
+
+### v1.1.0 (Current)
+- ✨ **Project Validation System** - Prevents fragmentation with fuzzy name matching
+- ✨ **validate_project_name** tool - Manual name checking
+- ✨ **Force Override** capability - Bypass validation when needed
+- ✨ **Enhanced Testing** - Comprehensive validation test suite
+- 🐛 **Bug Fixes** - Improved error handling and edge cases
+
+### v1.0.0
+- 🚀 Initial release with core continuity functionality
 
 ---
 
 **Built with ❤️ for the Claude community**
 
-*Tired of losing context? This MCP server has your back!*
+*Tired of fragmented projects? Version 1.1 keeps your context organized!*
