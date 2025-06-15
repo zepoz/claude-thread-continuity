@@ -11,12 +11,14 @@ Features:
 - Local JSON storage for privacy
 - Smart auto-save triggers
 - Multi-project support
+- Project validation to prevent fragmentation
 
 Usage:
 - save_project_state: Save current project context
 - load_project_state: Restore full project context  
 - list_active_projects: View all tracked projects
 - get_project_summary: Quick project overview
+- validate_project_name: Check for similar existing projects
 
 Author: Built for the Claude community
 License: MIT
@@ -30,6 +32,7 @@ import traceback
 import argparse
 import json
 import platform
+import difflib
 from collections import deque
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
@@ -63,8 +66,50 @@ class ProjectState:
         project_dir.mkdir(parents=True, exist_ok=True)
         return project_dir
     
-    def save_state(self, project_name: str, state_data: Dict[str, Any]) -> bool:
-        """Save project state to JSON file."""
+    def validate_project_name(self, project_name: str, similarity_threshold: float = 0.7) -> Dict[str, Any]:
+        """Check for similar existing project names to prevent fragmentation."""
+        existing_projects = [p["name"] for p in self.list_projects()]
+        
+        # Fuzzy matching for similar names
+        similar_projects = []
+        for existing_name in existing_projects:
+            # Skip exact matches (updating existing projects is fine)
+            if existing_name.lower() == project_name.lower():
+                continue
+                
+            similarity = difflib.SequenceMatcher(None, project_name.lower(), existing_name.lower()).ratio()
+            if similarity >= similarity_threshold:
+                similar_projects.append({
+                    'name': existing_name,
+                    'similarity': round(similarity, 3)
+                })
+        
+        # Sort by similarity (highest first)
+        similar_projects.sort(key=lambda x: x['similarity'], reverse=True)
+        
+        return {
+            'is_unique': len(similar_projects) == 0,
+            'similar_projects': similar_projects,
+            'suggestion': 'consolidate' if similar_projects else 'create_new',
+            'project_name': project_name,
+            'threshold_used': similarity_threshold
+        }
+    
+    def save_state(self, project_name: str, state_data: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
+        """Save project state to JSON file with validation."""
+        
+        # Validate project name unless forced
+        validation_result = None
+        if not force:
+            validation_result = self.validate_project_name(project_name)
+            if not validation_result['is_unique']:
+                return {
+                    'success': False,
+                    'status': 'validation_required',
+                    'validation': validation_result,
+                    'message': f'Similar projects found. Consider consolidating or use force=True to override.'
+                }
+        
         try:
             project_dir = self.get_project_dir(project_name)
             state_file = project_dir / "current_state.json"
@@ -73,7 +118,8 @@ class ProjectState:
             state_data.update({
                 "project_name": project_name,
                 "last_updated": datetime.now().isoformat(),
-                "version": "1.0"
+                "version": "1.1",
+                "validation_bypassed": force
             })
             
             # Write atomically
@@ -89,11 +135,20 @@ class ProjectState:
             
             # Keep only last 5 backups
             self._cleanup_backups(project_dir)
-            return True
+            
+            return {
+                'success': True,
+                'status': 'saved',
+                'validation': validation_result,
+                'message': f'Project state saved successfully for "{project_name}"'
+            }
             
         except Exception as e:
-            print(f"Error saving state: {e}", file=sys.stderr)
-            return False
+            return {
+                'success': False,
+                'status': 'error',
+                'message': f'Error saving state: {e}'
+            }
     
     def load_state(self, project_name: str) -> Optional[Dict[str, Any]]:
         """Load project state from JSON file."""
@@ -170,7 +225,8 @@ class ProjectState:
             "auto_save_context": context,
             "checkpoint_time": datetime.now().isoformat()
         })
-        return self.save_state(project_name, current_state)
+        result = self.save_state(project_name, current_state, force=True)  # Auto-saves bypass validation
+        return result.get('success', False)
     
     def _cleanup_backups(self, project_dir: Path, keep_count: int = 5):
         """Keep only the most recent backup files."""
@@ -260,6 +316,7 @@ class ContinuityServer:
             print("\n=== Claude Thread Continuity System ===", file=sys.stderr, flush=True)
             print(f"Python: {platform.python_version()}", file=sys.stderr, flush=True)
             print(f"Storage: Local JSON files", file=sys.stderr, flush=True)
+            print("✨ NEW: Project validation prevents fragmentation", file=sys.stderr, flush=True)
             print("MCP Thread Continuity initialization completed", file=sys.stderr, flush=True)
             
             return True
@@ -335,6 +392,11 @@ class ContinuityServer:
                                 "conversation_summary": {
                                     "type": "string",
                                     "description": "Brief summary of conversation context"
+                                },
+                                "force": {
+                                    "type": "boolean",
+                                    "description": "Bypass validation for similar project names",
+                                    "default": False
                                 }
                             },
                             "required": ["project_name"]
@@ -371,6 +433,27 @@ class ContinuityServer:
                                 "project_name": {
                                     "type": "string",
                                     "description": "Name of the project"
+                                }
+                            },
+                            "required": ["project_name"]
+                        }
+                    ),
+                    types.Tool(
+                        name="validate_project_name",
+                        description="Check for similar existing project names to prevent fragmentation",
+                        inputSchema={
+                            "type": "object",
+                            "properties": {
+                                "project_name": {
+                                    "type": "string",
+                                    "description": "Name to check for similarity with existing projects"
+                                },
+                                "similarity_threshold": {
+                                    "type": "number",
+                                    "description": "Similarity threshold (0.0-1.0), default 0.7",
+                                    "default": 0.7,
+                                    "minimum": 0.0,
+                                    "maximum": 1.0
                                 }
                             },
                             "required": ["project_name"]
@@ -427,6 +510,8 @@ class ContinuityServer:
                     return await self.handle_list_active_projects(arguments)
                 elif name == "get_project_summary":
                     return await self.handle_get_project_summary(arguments)
+                elif name == "validate_project_name":
+                    return await self.handle_validate_project_name(arguments)
                 elif name == "auto_save_checkpoint":
                     return await self.handle_auto_save_checkpoint(arguments)
                 else:
@@ -442,20 +527,44 @@ class ContinuityServer:
     # TOOL HANDLERS
     async def handle_save_project_state(self, arguments: dict) -> List[types.TextContent]:
         project_name = arguments.get("project_name")
+        force = arguments.get("force", False)
         
         if not project_name:
             return [types.TextContent(type="text", text="Error: Project name is required")]
         
         try:
             storage = await self._ensure_storage_initialized()
-            success = storage.save_state(project_name, arguments)
+            result = storage.save_state(project_name, arguments, force=force)
             
-            if success:
-                message = f"✅ Project state saved for '{project_name}'"
-            else:
-                message = f"❌ Failed to save state for '{project_name}'"
+            if result['success']:
+                output = f"✅ {result['message']}"
                 
-            return [types.TextContent(type="text", text=message)]
+                # Add validation info if it was performed
+                if result.get('validation') and not force:
+                    validation = result['validation']
+                    if validation['is_unique']:
+                        output += f"\n🔍 Validation: No similar projects found"
+                    else:
+                        output += f"\n⚠️  Similar projects were detected but save was forced"
+            else:
+                if result['status'] == 'validation_required':
+                    validation = result['validation']
+                    output = f"🚫 Project validation failed for '{project_name}'\n\n"
+                    output += f"**Similar projects found:**\n"
+                    
+                    for similar in validation['similar_projects']:
+                        similarity_pct = int(similar['similarity'] * 100)
+                        output += f"• **{similar['name']}** ({similarity_pct}% similar)\n"
+                    
+                    output += f"\n**Recommendations:**\n"
+                    output += f"1. **Update existing project**: Use one of the similar names above\n"
+                    output += f"2. **Force new project**: Add `force: true` to bypass validation\n"
+                    output += f"3. **Choose different name**: Use a more distinct project name\n"
+                    output += f"\n*Threshold used: {validation['threshold_used']} similarity*"
+                else:
+                    output = f"❌ {result['message']}"
+                
+            return [types.TextContent(type="text", text=output)]
         except Exception as e:
             logger.error(f"Error saving project state: {str(e)}\n{traceback.format_exc()}")
             return [types.TextContent(type="text", text=f"Error saving project state: {str(e)}")]
@@ -562,6 +671,42 @@ class ContinuityServer:
             logger.error(f"Error getting project summary: {str(e)}\n{traceback.format_exc()}")
             return [types.TextContent(type="text", text=f"Error getting project summary: {str(e)}")]
     
+    async def handle_validate_project_name(self, arguments: dict) -> List[types.TextContent]:
+        project_name = arguments.get("project_name")
+        similarity_threshold = arguments.get("similarity_threshold", 0.7)
+        
+        if not project_name:
+            return [types.TextContent(type="text", text="Error: Project name is required")]
+        
+        try:
+            storage = await self._ensure_storage_initialized()
+            validation = storage.validate_project_name(project_name, similarity_threshold)
+            
+            output = f"🔍 **Project Name Validation: '{project_name}'**\n\n"
+            
+            if validation['is_unique']:
+                output += "✅ **Result: UNIQUE** - No similar projects found\n"
+                output += f"🎯 **Recommendation**: Safe to create new project\n"
+            else:
+                output += "⚠️  **Result: SIMILAR PROJECTS FOUND**\n\n"
+                output += "**Similar existing projects:**\n"
+                
+                for similar in validation['similar_projects']:
+                    similarity_pct = int(similar['similarity'] * 100)
+                    output += f"• **{similar['name']}** ({similarity_pct}% similar)\n"
+                
+                output += f"\n**Recommendations:**\n"
+                output += f"1. **Consolidate**: Update one of the existing similar projects\n"
+                output += f"2. **Rename**: Choose a more distinct name\n"
+                output += f"3. **Force create**: Use `force: true` if truly different project\n"
+            
+            output += f"\n*Similarity threshold: {similarity_threshold} ({int(similarity_threshold * 100)}%)*"
+            
+            return [types.TextContent(type="text", text=output)]
+        except Exception as e:
+            logger.error(f"Error validating project name: {str(e)}\n{traceback.format_exc()}")
+            return [types.TextContent(type="text", text=f"Error validating project name: {str(e)}")]
+    
     async def handle_auto_save_checkpoint(self, arguments: dict) -> List[types.TextContent]:
         project_name = arguments.get("project_name")
         trigger_type = arguments.get("trigger_type")
@@ -596,6 +741,7 @@ async def async_main():
     print("\n=== Claude Thread Continuity MCP Server ===", file=sys.stderr, flush=True)
     print(f"Python: {platform.python_version()}", file=sys.stderr, flush=True)
     print(f"Storage: ~/.claude_states/", file=sys.stderr, flush=True)
+    print("✨ NEW: Project validation prevents fragmentation", file=sys.stderr, flush=True)
     print("================================================\n", file=sys.stderr, flush=True)
     
     logger.info("Starting Claude Thread Continuity MCP Server")
@@ -641,7 +787,7 @@ async def async_main():
                 write_stream,
                 InitializationOptions(
                     server_name="claude-continuity",
-                    server_version="1.0.0",
+                    server_version="1.1.0",
                     protocol_version="2024-11-05",
                     capabilities=continuity_server.server.get_capabilities(
                         notification_options=NotificationOptions(),
