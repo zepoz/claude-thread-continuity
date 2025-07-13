@@ -23,7 +23,7 @@ except ImportError as e:
     print("Make sure you're running this from the directory containing server.py")
     sys.exit(1)
 
-def test_project_state():
+async def test_project_state():
     """Test the ProjectState class functionality."""
     print("\n🧪 Testing ProjectState class...")
     
@@ -44,16 +44,16 @@ def test_project_state():
     try:
         # Test saving
         print("  📝 Testing save_state...")
-        result = storage.save_state(test_project, test_data)
+        result = await storage.save_state(test_project, test_data)
         if result.get('success'):
             print("  ✅ save_state successful")
         else:
-            print("  ❌ save_state failed")
+            print(f"  ❌ save_state failed: {result.get('message')}")
             return False
         
         # Test loading
         print("  📖 Testing load_state...")
-        loaded_data = storage.load_state(test_project)
+        loaded_data = await storage.load_state(test_project)
         if loaded_data:
             print("  ✅ load_state successful")
             # Verify data integrity
@@ -77,7 +77,7 @@ def test_project_state():
         
         # Test project summary
         print("  📊 Testing get_project_summary...")
-        summary = storage.get_project_summary(test_project)
+        summary = await storage.get_project_summary(test_project)
         if summary and "Testing the continuity system" in summary:
             print("  ✅ get_project_summary successful")
         else:
@@ -86,7 +86,7 @@ def test_project_state():
         
         # Test auto-save checkpoint
         print("  💾 Testing auto_save_checkpoint...")
-        checkpoint_success = storage.auto_save_checkpoint(test_project, "test_trigger", "Testing checkpoint functionality")
+        checkpoint_success = await storage.auto_save_checkpoint(test_project, "test_trigger", "Testing checkpoint functionality")
         if checkpoint_success:
             print("  ✅ auto_save_checkpoint successful")
         else:
@@ -103,9 +103,11 @@ def test_project_state():
         
     except Exception as e:
         print(f"  ❌ Error during testing: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
-def test_project_validation():
+async def test_project_validation():
     """Test the new project validation functionality."""
     print("\n🧪 Testing Project Validation features...")
     
@@ -127,7 +129,7 @@ def test_project_validation():
                 "current_focus": f"Working on {project_name}",
                 "conversation_summary": f"Test project for {project_name}"
             }
-            result = storage.save_state(project_name, test_data, force=True)
+            result = await storage.save_state(project_name, test_data, force=True)
             if not result.get('success'):
                 print(f"  ❌ Failed to create test project: {project_name}")
                 return False
@@ -158,7 +160,7 @@ def test_project_validation():
         
         # Test save with validation (should fail)
         print("  🚫 Testing save with validation failure...")
-        result = storage.save_state("Hebrew Evaluation Website", {"test": "data"}, force=False)
+        result = await storage.save_state("Hebrew Evaluation Website", {"test": "data"}, force=False)
         if not result.get('success') and result.get('status') == 'validation_required':
             print("  ✅ Save validation correctly prevented similar project creation")
         else:
@@ -167,7 +169,7 @@ def test_project_validation():
         
         # Test save with force override
         print("  💪 Testing save with force override...")
-        result = storage.save_state("Hebrew Evaluation Website", {"test": "data"}, force=True)
+        result = await storage.save_state("Hebrew Evaluation Website", {"test": "data"}, force=True)
         if result.get('success'):
             print("  ✅ Force override successful")
         else:
@@ -238,23 +240,31 @@ async def test_new_tools():
         server = ContinuityServer()
         await server.initialize()
         
-        # Test validate_project_name tool
+        # First, create a project to test against
+        await server.handle_save_project_state({
+            "project_name": "My Test Project",
+            "current_focus": "Setup for tool testing",
+            "force": True
+        })
+
+        # Test validate_project_name tool with a similar name
         print("  🔍 Testing validate_project_name tool...")
         result = await server.handle_validate_project_name({
-            "project_name": "Test Validation Project",
+            "project_name": "My Test Proj",
             "similarity_threshold": 0.7
         })
         
-        if result and len(result) > 0 and "UNIQUE" in result[0].text:
+        if result and len(result) > 0 and "SIMILAR PROJECTS FOUND" in result[0].text:
             print("  ✅ validate_project_name tool working")
         else:
             print("  ❌ validate_project_name tool failed")
+            # print(f"DEBUG: {result[0].text if result else 'No result'}")
             return False
         
         # Test enhanced save_project_state with validation
         print("  💾 Testing enhanced save_project_state...")
         save_result = await server.handle_save_project_state({
-            "project_name": "Test Save Project",
+            "project_name": "Unique Save Test Project",
             "current_focus": "Testing enhanced save functionality",
             "force": False
         })
@@ -265,6 +275,15 @@ async def test_new_tools():
             print("  ❌ Enhanced save_project_state failed")
             return False
         
+        # Cleanup the test project
+        import shutil
+        test_dir = Path(os.path.expanduser("~/.claude_states/"))
+        project_dirs = ["My Test Project", "Unique Save Test Project"]
+        for p_dir in project_dirs:
+            dir_to_remove = test_dir / p_dir
+            if dir_to_remove.exists():
+                shutil.rmtree(dir_to_remove)
+
         return True
         
     except Exception as e:
@@ -311,14 +330,22 @@ def main():
         print("\n❌ Dependency tests failed. Please install missing dependencies.")
     
     # Test ProjectState functionality
-    if not test_project_state():
+    try:
+        if not asyncio.run(test_project_state()):
+            all_tests_passed = False
+            print("\n❌ ProjectState tests failed.")
+    except Exception as e:
+        print(f"\n❌ ProjectState test crashed: {e}")
         all_tests_passed = False
-        print("\n❌ ProjectState tests failed.")
-    
+
     # Test NEW project validation functionality
-    if not test_project_validation():
+    try:
+        if not asyncio.run(test_project_validation()):
+            all_tests_passed = False
+            print("\n❌ Project validation tests failed.")
+    except Exception as e:
+        print(f"\n❌ Project validation test crashed: {e}")
         all_tests_passed = False
-        print("\n❌ Project validation tests failed.")
     
     # Test server initialization
     try:

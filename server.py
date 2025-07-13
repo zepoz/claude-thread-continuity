@@ -295,9 +295,9 @@ class ProjectState:
         projects.sort(key=lambda x: x.get("last_updated", ""), reverse=True)
         return projects
     
-    def get_project_summary(self, project_name: str) -> Optional[str]:
+    async def get_project_summary(self, project_name: str) -> Optional[str]:
         """Get a concise summary of project state."""
-        state = self.load_state(project_name)
+        state = await self.load_state(project_name)
         if not state:
             return None
             
