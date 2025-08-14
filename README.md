@@ -1,8 +1,37 @@
-# 🧠 Claude Thread Continuity MCP Server
+# 🧠 Claude Thread Continuity MCP Server (Enhanced Fork)
 
 **Never lose context again!** This MCP server automatically saves and restores project state when Claude threads hit token limits, ensuring seamless conversation continuity.
 
-## 🚀 Features
+> **🙏 Huge thanks to [peless](https://github.com/peless/claude-thread-continuity) for creating the original Claude Thread Continuity server!** This fork adds conversation state accumulation capabilities through some casual vibe coding. Instead of overwirting the state overy time you save. I'm definitely not a programmer. Maybe its also possible with the original and im too dumb to get it lmao honestly.
+
+## Have some Clanker explain the rest...
+
+## New Features (This Fork) (Why is there no fork emoji but only a spoon or fork+knife?)
+
+### New:  Conversation State Accumulation
+Accumulates context across multiple threads instead of overwriting.
+
+**Original behavior:**
+- Each `save_project_state` completely overwrote previous data
+- Lost conversation history when switching threads
+
+**Enhanced behavior:**
+- **`append_lists` mode** - Intelligently appends to arrays while updating scalar fields
+- **`merge` mode** - Updates specific fields while preserving others  
+- **`replace` mode** - Original overwrite behavior (still default)
+- **Conversation accumulation** - Build up technical decisions, file lists, and context over time
+
+### 🔄 Smart Merge Strategies
+
+| Mode | Behavior | Best For |
+|------|----------|----------|
+| `append_lists` | Adds new items to existing arrays, updates other fields | Multi-session development projects |
+| `merge` | Updates specific fields while preserving others | Focused updates to project aspects |
+| `replace` | Complete overwrite (original behavior) | Starting fresh or major pivots |
+
+---
+
+## 🌟 All Original Features Included
 
 - **🔄 Automatic State Persistence** - Auto-saves project context during conversations
 - **⚡ Seamless Restoration** - Instantly restore full context when starting new threads
@@ -12,29 +41,12 @@
 - **📊 Smart Triggers** - Auto-saves on file changes, decisions, milestones
 - **🗂️ Multi-Project Support** - Manage multiple concurrent projects
 
-## ✨ NEW: Anti-Fragmentation System
-
-Version 1.1 introduces intelligent project validation to prevent the common issue of accidentally creating multiple similar projects:
-
-- **🔍 Fuzzy Name Matching** - Detects similar project names (70% similarity threshold)
-- **⚠️ Validation Warnings** - Suggests consolidation when similar projects exist
-- **💪 Force Override** - Bypass validation when genuinely different projects needed
-- **🎯 Configurable Thresholds** - Adjust sensitivity for your workflow
-
-### Example Validation in Action
-
-```
-❌ Project "Hebrew Speaking Evaluation MVP" blocked
-✅ Similar project found: "Hebrew Evaluation MVP" (85% similar)
-🎯 Recommendation: Update existing project or use force=true
-```
-
 ## ⚡ Quick Start
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/peless/claude-thread-continuity.git
-cd claude-thread-continuity
+# 1. Clone this enhanced fork
+git clone https://github.com/[your-username]/claude-thread-continuity-enhanced.git
+cd claude-thread-continuity-enhanced
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -55,7 +67,7 @@ python3 test_server.py
 mkdir -p ~/.mcp-servers/claude-continuity
 cd ~/.mcp-servers/claude-continuity
 
-# Copy files (or clone repo to this location)
+# Copy files from this fork
 # Place server.py and requirements.txt here
 ```
 
@@ -83,19 +95,53 @@ Add this configuration:
 
 ### 3. Restart Claude Desktop
 
-Close and reopen Claude Desktop. The continuity tools will now be available automatically.
+Close and reopen Claude Desktop. The enhanced continuity tools will now be available automatically.
 
-## 🎯 How It Works
+## 🎯 How the Enhanced Version Works
 
-### Automatic Context Saving
+### NEW: Accumulative State Saving
 
-The server automatically saves project state when:
-- ✅ Files are created or modified
-- ✅ Technical decisions are made  
-- ✅ Project milestones are reached
-- ✅ Every 10 messages (fallback)
+The enhanced server now supports three merge strategies:
 
-### Smart Validation Process
+```bash
+# Append mode - builds up lists over time (RECOMMENDED for multi-session projects)
+save_project_state: project_name="my-app", technical_decisions=["Added Redis caching"], files_modified=["cache.py"], merge_mode="append_lists"
+
+# Merge mode - updates specific fields
+save_project_state: project_name="my-app", current_focus="Database optimization", merge_mode="merge"  
+
+# Replace mode - original behavior (complete overwrite)
+save_project_state: project_name="my-app", current_focus="Starting fresh", merge_mode="replace"
+```
+
+### Example: Building Context Over Time
+
+**Session 1:**
+```bash
+save_project_state: project_name="react-dashboard", 
+  current_focus="Setting up project structure",
+  technical_decisions=["Using Vite", "TypeScript setup"],
+  files_modified=["package.json", "vite.config.ts"],
+  merge_mode="append_lists"
+```
+
+**Session 2 (different thread):**
+```bash
+# Load previous context
+load_project_state: project_name="react-dashboard"
+
+# Add more without losing previous decisions
+save_project_state: project_name="react-dashboard",
+  technical_decisions=["Added Zustand for state management"],
+  files_modified=["src/store.ts"],
+  merge_mode="append_lists"
+```
+
+**Result:** Your project now has accumulated:
+- `technical_decisions`: `["Using Vite", "TypeScript setup", "Added Zustand for state management"]`
+- `files_modified`: `["package.json", "vite.config.ts", "src/store.ts"]`
+
+### Smart Validation Process (Original Feature)
 
 Before saving, the system:
 1. **Checks for Similar Names** - Uses fuzzy matching to find existing projects
@@ -103,52 +149,65 @@ Before saving, the system:
 3. **Provides Recommendations** - Suggests consolidation or renaming
 4. **Allows Override** - Use `force: true` for edge cases
 
-### Context Restoration
+## 🔧 Enhanced Commands
 
-When starting a new thread:
-1. **Load Project:** `load_project_state: project_name="your-project"`
-2. **Full Context Restored:** All technical decisions, files, and progress restored
-3. **Continue Seamlessly:** Pick up exactly where you left off
+| Command | Description | Enhancement in Fork |
+|---------|-------------|---------------------|
+| `save_project_state` | Save current project state | ✨ **Now supports `merge_mode` parameter** |
+| `load_project_state` | Restore full project context | Same as original |
+| `list_active_projects` | View all tracked projects | Same as original |
+| `get_project_summary` | Get quick project overview | Same as original |
+| `validate_project_name` | Check for similar project names | Same as original |
+| `auto_save_checkpoint` | Triggered automatically | Same as original |
 
-## 🔧 Available Commands
+## 💡 Enhanced Usage Examples
 
-| Command | Description | NEW in v1.1 |
-|---------|-------------|-------------|
-| `save_project_state` | Save current project state | ✨ Now with validation |
-| `load_project_state` | Restore full project context | |
-| `list_active_projects` | View all tracked projects | |
-| `get_project_summary` | Get quick project overview | |
-| `validate_project_name` | Check for similar project names | ✨ NEW |
-| `auto_save_checkpoint` | Triggered automatically | |
+### Multi-Session Development Project
+```bash
+# Day 1: Initial setup
+save_project_state: project_name="e-commerce-api",
+  current_focus="Setting up Express server",
+  technical_decisions=["Node.js with Express", "MongoDB database"],
+  files_modified=["server.js", "package.json"],
+  merge_mode="append_lists"
 
-## 💡 Usage Examples
+# Day 2: Adding authentication (new thread)
+load_project_state: project_name="e-commerce-api"
 
-### Starting a New Project (with Validation)
+save_project_state: project_name="e-commerce-api",
+  current_focus="Implementing JWT authentication", 
+  technical_decisions=["JWT for auth tokens", "bcrypt for password hashing"],
+  files_modified=["auth/middleware.js", "models/User.js"],
+  merge_mode="append_lists"
+
+# Day 3: Product management (another new thread)
+load_project_state: project_name="e-commerce-api"
+
+save_project_state: project_name="e-commerce-api",
+  current_focus="Building product CRUD operations",
+  technical_decisions=["Mongoose for ODM", "Input validation with Joi"],
+  files_modified=["routes/products.js", "models/Product.js"],
+  merge_mode="append_lists"
 ```
-save_project_state: project_name="my-web-app", current_focus="Setting up React components", technical_decisions=["Using TypeScript", "Vite for bundling"], next_actions=["Create header component", "Set up routing"]
-```
 
-### Checking Name Before Creating
-```
-validate_project_name: project_name="my-webapp", similarity_threshold=0.7
+**Result:** Your project now has a complete history of all decisions and files across all sessions!
+
+### Focused Updates
+```bash
+# Just update the current focus without touching other fields
+save_project_state: project_name="my-project",
+  current_focus="Debugging authentication flow",
+  merge_mode="merge"
 ```
 
 ### Force Override When Needed
-```
-save_project_state: project_name="my-web-app-v2", force=true, current_focus="Starting version 2"
-```
-
-### Continuing After Token Limit
-```
-load_project_state: project_name="my-web-app"
+```bash
+save_project_state: project_name="my-web-app-v2", 
+  force=true, 
+  current_focus="Starting version 2"
 ```
 
-### Viewing All Projects
-```
-list_active_projects
-```
-
-## 🗂️ Data Storage
+## 🗂️ Enhanced Data Storage
 
 Project states are stored locally at:
 ```
@@ -161,160 +220,112 @@ Project states are stored locally at:
     └── backup_*.json
 ```
 
-- **Privacy:** Everything stays on your machine
-- **Backups:** Automatic backup rotation (keeps last 5)
-- **Format:** Human-readable JSON files
-- **Validation:** Metadata tracks validation bypass status
+### Enhanced State Structure
 
-## 🏗️ Project State Structure
-
-Each saved state includes:
+Each saved state now includes merge tracking:
 
 ```json
 {
   "project_name": "my-project",
   "current_focus": "What you're working on now",
-  "technical_decisions": ["Key choices made"],
-  "files_modified": ["List of files created/changed"],
-  "next_actions": ["Planned next steps"],
+  "technical_decisions": ["Accumulated", "decisions", "over", "time"],
+  "files_modified": ["All", "files", "ever", "touched"],
+  "next_actions": ["Current planned steps"],
   "conversation_summary": "Brief context summary",
   "last_updated": "2025-06-15T10:30:00Z",
-  "version": "1.1",
+  "version": "1.2",
+  "merge_mode_used": "append_lists",
   "validation_bypassed": false
 }
 ```
 
-## 🛡️ Validation Configuration
+## 🛡️ Merge Mode Details
 
-### Default Settings
-- **Similarity Threshold:** 70% (0.7)
-- **Comparison Method:** Fuzzy string matching
-- **Auto-save Behavior:** Bypasses validation (uses `force=true`)
+### `append_lists` Mode (Recommended)
+- **Arrays/Lists:** New items are appended to existing lists (duplicates avoided for strings)
+- **Other Fields:** Overwritten with new values
+- **Best For:** Multi-session development where you want to accumulate decisions and files
 
-### Customizing Validation
-```
-validate_project_name: project_name="test-project", similarity_threshold=0.8
-```
+### `merge` Mode  
+- **All Fields:** New data updates/overwrites existing fields
+- **Missing Fields:** Preserved from existing state
+- **Best For:** Focused updates to specific aspects of a project
 
-Higher threshold = stricter matching (0.9 = 90% similar required)
-Lower threshold = looser matching (0.5 = 50% similar triggers warning)
+### `replace` Mode (Original Behavior)
+- **All Data:** Completely overwrites existing state
+- **Best For:** Starting fresh or major project pivots
 
 ## 🔍 Troubleshooting
 
-### Tools Not Appearing
-1. Check Claude Desktop logs
-2. Verify Python 3 is in your PATH: `python3 --version`
-3. Validate JSON config syntax
-4. Restart Claude Desktop completely
+Same as original, plus:
 
-### Testing the Enhanced Server
-```bash
-cd ~/.mcp-servers/claude-continuity
-python3 test_server.py
-```
+### Merge Mode Issues
+**Lists getting too long:**
+Occasionally use `replace` mode to start fresh, or manually clean up your project state files.
 
-The test suite now includes validation testing and will report:
-- ✅ Basic functionality tests
-- ✅ Project validation tests  
-- ✅ Fuzzy matching accuracy
-- ✅ Force override functionality
+**Unexpected merge behavior:**
+Check the `merge_mode_used` field in your saved state to see which mode was applied.
 
-### Common Issues
+## 🧪 Development Notes
 
-**Validation Too Strict:**
-Lower the similarity threshold or use `force=true`
+> **Disclaimer:** This fork was created through "vibe coding" with Claude's assistance. I'm not a professional programmer - just someone who wanted better conversation continuity! The implementation works for my use case, but there might be edge cases I haven't considered. Use at your own discretion and feel free to improve! 🤝
 
-**Permission Errors:**
-```bash
-chmod +x ~/.mcp-servers/claude-continuity/server.py
-```
-
-**Python Path Issues:**
-Update the config to use full Python path:
-```json
-{
-  "command": "/usr/bin/python3",
-  "args": ["~/.mcp-servers/claude-continuity/server.py"]
-}
-```
-
-## 🧪 Development
+### Key Changes Made
+- Added `merge_mode` parameter to `save_state` method
+- Implemented three merge strategies with list deduplication
+- Updated tool schema to expose merge mode options
+- Enhanced state metadata to track merge behavior
+- Maintained backward compatibility with original behavior
 
 ### Requirements
 - Python 3.8+
 - MCP SDK 1.0+
 - difflib (built-in, for fuzzy matching)
 
-### Running Tests
-```bash
-python3 test_server.py
-```
-
-Enhanced test suite includes:
-- Basic functionality validation
-- **NEW:** Project name similarity testing
-- **NEW:** Validation workflow testing
-- **NEW:** Force override testing
-- **NEW:** MCP tool validation
-
-### Project Structure
-```
-claude-thread-continuity/
-├── server.py           # Main MCP server (enhanced with validation)
-├── requirements.txt    # Python dependencies
-├── test_server.py     # Comprehensive test suite
-├── README.md          # This file
-├── LICENSE            # MIT License
-└── examples/          # Usage examples
-```
-
 ## 🤝 Contributing
 
-Contributions welcome! Please:
+All credit for the original amazing work goes to [peless](https://github.com/peless/claude-thread-continuity)! 
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
-
-### Current Development Priorities
-- [ ] Integration with external project management tools
-- [ ] Advanced similarity algorithms
-- [ ] Project merging utilities
-- [ ] Custom validation rules
+If you want to improve this fork:
+1. Go fork yourself! Fork this repository
+2. Make your improvements (probably better than my vibe coding! 😄)
+3. Submit a pull request
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License - same as the original project.
 
-## 🚀 Why This Matters
+## 🚀 Why This Enhanced Version Matters
 
-**Before v1.1:** 😫 Hit token limit → Lose all context → Re-explain everything → Lose momentum
+**Original version:** 😫 Hit token limit → Start new thread → Lose conversation context → Re-explain recent decisions
 
-**Common Problem:** 😤 Create "Hebrew MVP", then "Hebrew Evaluation MVP", then "Hebrew Speaking MVP" → Context scattered across multiple projects
-
-**After v1.1:** 😎 Hit token limit → Start new thread → `load_project_state` → Continue seamlessly + Smart validation prevents fragmentation
+**Enhanced version:** 😎 Hit token limit → Start new thread → `load_project_state` → `save_project_state` with `merge_mode="append_lists"` → **All context accumulates over time!**
 
 Perfect for:
-- 🏗️ **Complex Development Projects** - Keep track of architecture decisions without fragmentation
-- 📚 **Learning & Research** - Maintain context across study sessions with consistent naming
-- ✍️ **Writing Projects** - Remember plot points without creating duplicate character projects
-- 🔧 **Multi-session Debugging** - Preserve debugging state with clear project organization
+- 🏗️ **Long-term Development Projects** - Build up complete history of decisions and files
+- 📚 **Extended Learning Sessions** - Accumulate knowledge and progress over multiple conversations  
+- ✍️ **Iterative Writing Projects** - Keep track of all changes and decisions across sessions
+- 🔧 **Complex Debugging** - Maintain complete context of attempted solutions and findings
 
-## 📈 Version History
+## 📈 Fork History
 
-### v1.1.0 (Current)
+### v1.🍴.0 (This Fork)
+- ✨ **Multi-Session State Accumulation** - Lists build up over time instead of being overwritten
+- ✨ **Three Merge Strategies** - `append_lists`, `merge`, and `replace` modes
+- ✨ **Smart List Management** - Automatic deduplication for string arrays
+- ✨ **Enhanced Metadata** - Track which merge mode was used
+- 🤝 **Backward Compatible** - Original behavior preserved as default
+
+### v1.1.0 (Original by peless)
 - ✨ **Project Validation System** - Prevents fragmentation with fuzzy name matching
 - ✨ **validate_project_name** tool - Manual name checking
 - ✨ **Force Override** capability - Bypass validation when needed
-- ✨ **Enhanced Testing** - Comprehensive validation test suite
-- 🐛 **Bug Fixes** - Improved error handling and edge cases
 
-### v1.0.0
+### v1.0.0 (Original by peless)
 - 🚀 Initial release with core continuity functionality
 
 ---
 
-**Built with ❤️ for the Claude community**
+**Original by [peless](https://github.com/peless/claude-thread-continuity) | Enhanced fork with ❤️ and vibe coding**
 
-*Tired of fragmented projects? Version 1.1 keeps your context organized!*
+*Now with true conversation continuity - your project context actually grows over time!*
