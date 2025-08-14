@@ -1,4 +1,4 @@
-# 🧠 Claude Thread Continuity MCP Server (Enhanced Fork)
+# 🧠 Claude Thread Continuity MCP Server small (Added saving multiple states to one project)
 
 **Never lose context again!** This MCP server automatically saves and restores project state when Claude threads hit token limits, ensuring seamless conversation continuity.
 
