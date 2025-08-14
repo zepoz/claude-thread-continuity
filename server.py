@@ -182,7 +182,7 @@ class ProjectState:
             'threshold_used': similarity_threshold
         }
     
-    async def save_state(self, project_name: str, state_data: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
+    async def save_state(self, project_name: str, state_data: Dict[str, Any], force: bool = False, merge_mode: str = "replace") -> Dict[str, Any]:
         """Save project state to JSON file with validation and Memory MCP sync."""
         
         # Validate project name unless forced
@@ -201,21 +201,93 @@ class ProjectState:
             project_dir = self.get_project_dir(project_name)
             state_file = project_dir / "current_state.json"
             
+            # NEW: Handle merge modes
+            if merge_mode != "replace" and state_file.exists():
+                try:
+                    with open(state_file, 'r', encoding='utf-8') as f:
+                        existing_state = json.load(f)
+                    
+                    if merge_mode == "merge":
+                        # Merge dictionaries, new data overwrites existing
+                        merged_data = existing_state.copy()
+                        merged_data.update(state_data)
+                        state_data = merged_data
+                        
+                    elif merge_mode == "append_lists":
+                        # Smart append: merge dicts, append to lists, replace scalars
+                        merged_data = existing_state.copy()
+                        
+                        for key, new_value in state_data.items():
+                            if key in merged_data:
+                                existing_value = merged_data[key]
+                                
+                                # If both are lists, append unique items
+                                if isinstance(existing_value, list) and isinstance(new_value, list):
+                                    # Append new items that aren't already present
+                                    for item in new_value:
+                                        if item not in existing_value:
+                                            existing_value.append(item)
+                                    merged_data[key] = existing_value
+                                else:
+                                    # Replace non-list values
+                                    merged_data[key] = new_value
+                            else:
+                                merged_data[key] = new_value
+                        
+                        state_data = merged_data
+                        
+                except (json.JSONDecodeError, IOError):
+                    # If we can't read existing state, fall back to replace mode
+                    pass
+            
             # Add metadata
             state_data.update({
                 "project_name": project_name,
                 "last_updated": datetime.now().isoformat(),
                 "version": "1.2",
                 "validation_bypassed": force,
-                "memory_sync_enabled": True
+                "memory_sync_enabled": True,
+                "merge_mode": merge_mode
             })
             
-            # Write atomically
-            temp_file = state_file.with_suffix(".tmp")
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump(state_data, f, indent=2, ensure_ascii=False)
-            temp_file.rename(state_file)
-            
+
+            # Write atomically (Windows-safe):
+            # 1) write to a unique temp file in the same dir
+            # 2) flush + fsync
+            # 3) os.replace() to overwrite destination atomically
+            import os, tempfile, time
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", delete=False, dir=project_dir,
+                    prefix="current_state_", suffix=".tmp",
+                    encoding="utf-8", newline="\n"
+                ) as tmp:
+                    json.dump(state_data, tmp, indent=2, ensure_ascii=False)
+                    tmp.flush()
+                    os.fsync(tmp.fileno())
+                    tmp_path = tmp.name
+
+                # Small retry loop for occasional AV/indexer locks on Windows
+                retries = 5
+                delay = 0.05
+                for attempt in range(retries):
+                    try:
+                        os.replace(tmp_path, state_file)  # overwrites if exists
+                        tmp_path = None  # consumed
+                        break
+                    except PermissionError:
+                        if attempt == retries - 1:
+                            raise
+                        time.sleep(delay)
+            finally:
+                # Best-effort cleanup of leftover temp
+                if tmp_path:
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+ 
             # Create backup
             backup_file = project_dir / f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             with open(backup_file, 'w', encoding='utf-8') as f:
@@ -232,6 +304,7 @@ class ProjectState:
                 'status': 'saved',
                 'validation': validation_result,
                 'memory_sync': memory_sync_success,
+                'merge_mode': merge_mode,
                 'message': f'Project state saved successfully for "{project_name}"' + 
                           (f' (Memory sync: {"✅" if memory_sync_success else "⚠️"})')
             }
@@ -499,6 +572,12 @@ class ContinuityServer:
                                     "type": "boolean",
                                     "description": "Bypass validation for similar project names",
                                     "default": False
+                                },
+                                "merge_mode": {
+                                    "type": "string",
+                                    "enum": ["replace", "merge", "append_lists"],
+                                    "description": "How to handle existing data: replace (overwrite), merge (update), or append_lists (smart append to lists)",
+                                    "default": "replace"
                                 }
                             },
                             "required": ["project_name"]
@@ -630,13 +709,22 @@ class ContinuityServer:
     async def handle_save_project_state(self, arguments: dict) -> List[types.TextContent]:
         project_name = arguments.get("project_name")
         force = arguments.get("force", False)
+        merge_mode = arguments.get("merge_mode", "replace")
+        conversation_summary = arguments.get("conversation_summary", "")
         
         if not project_name:
             return [types.TextContent(type="text", text="Error: Project name is required")]
         
+        # NEW: Auto-detect merge mode from conversation summary if not explicitly set
+        if merge_mode == "replace" and conversation_summary:
+            detected_mode = self.detect_merge_mode_from_language(conversation_summary)
+            if detected_mode != "replace":
+                merge_mode = detected_mode
+                print(f"Auto-detected merge mode '{detected_mode}' from conversation text", file=sys.stderr, flush=True)
+        
         try:
             storage = await self._ensure_storage_initialized()
-            result = await storage.save_state(project_name, arguments, force=force)
+            result = await storage.save_state(project_name, arguments, force=force, merge_mode=merge_mode)
             
             if result['success']:
                 output = f"✅ {result['message']}"
@@ -653,6 +741,13 @@ class ContinuityServer:
                 if 'memory_sync' in result:
                     sync_status = "✅ Synced" if result['memory_sync'] else "⚠️  Sync failed"
                     output += f"\n🧠 Memory MCP: {sync_status}"
+                
+                # Show merge mode used (especially if auto-detected)
+                if result.get('merge_mode'):
+                    mode_text = result['merge_mode']
+                    if merge_mode != arguments.get("merge_mode", "replace"):
+                        mode_text += " (auto-detected)"
+                    output += f"\n📝 Merge mode: {mode_text}"
                         
             else:
                 if result['status'] == 'validation_required':
@@ -774,7 +869,7 @@ class ContinuityServer:
         
         try:
             storage = await self._ensure_storage_initialized()
-            summary = storage.get_project_summary(project_name)
+            summary = await storage.get_project_summary(project_name)
             
             if summary:
                 return [types.TextContent(
@@ -851,6 +946,44 @@ class ContinuityServer:
         except Exception as e:
             logger.error(f"Error auto-saving checkpoint: {str(e)}\n{traceback.format_exc()}")
             return [types.TextContent(type="text", text=f"Error auto-saving checkpoint: {str(e)}")]
+    
+    def detect_merge_mode_from_language(self, text: str) -> str:
+        """Detect merge mode from natural language patterns."""
+        text_lower = text.lower()
+        
+        # Append/Add patterns (most specific first)
+        append_patterns = [
+            "append", "add to", "add more", "continue", "extend",
+            "build on", "update with", "include", "also add",
+            "in addition", "plus", "along with", "additionally"
+        ]
+        
+        # Replace/Overwrite patterns
+        replace_patterns = [
+            "replace", "overwrite", "reset", "start fresh", "new state",
+            "from scratch", "completely update", "full update", "start over"
+        ]
+        
+        # Merge/Update patterns (more general)
+        merge_patterns = [
+            "merge", "combine", "update", "modify", "change",
+            "revise", "adjust", "set to"
+        ]
+        
+        # Check patterns in order of specificity
+        for pattern in append_patterns:
+            if pattern in text_lower:
+                return "append_lists"
+        
+        for pattern in replace_patterns:
+            if pattern in text_lower:
+                return "replace"
+        
+        for pattern in merge_patterns:
+            if pattern in text_lower:
+                return "merge"
+        
+        return "replace"  # Default
 
 
 async def async_main():
